@@ -180,6 +180,11 @@ iGPSPORT body with `totalTime == 2880`, plus schema validation.
 ## Known limitations
 
 - **Unofficial** iGPSPORT API (reverse-engineered). It can break if iGPSPORT
-  changes its backend.
+  changes its backend (as it did in 2026 — see the [CHANGELOG](CHANGELOG.md)).
 - Cycling only (`workoutType: "bike"`).
-- No OAuth — direct username/password against the login endpoint (over HTTPS).
+- Auth is the OAuth2 password grant with the iGPSPORT mobile client credentials;
+  your username/password are sent to iGPSPORT's own token endpoint (over HTTPS).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
