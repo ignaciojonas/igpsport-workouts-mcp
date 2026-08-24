@@ -3,10 +3,10 @@ igpsport_client.py
 
 Standalone client to create, edit and delete iGPSPORT custom workouts.
 
-Reuses the authentication flow and the unofficial endpoint discovered in the
-open-source project intervalssync (jorge-huxley/intervalssync, MIT license):
-login via the `loginToken` cookie -> Bearer token, then POST to
-`EditCustomWorkOut` with a structure of steps.
+Builds on the unofficial iGPSPORT endpoints originally reverse-engineered in the
+open-source project intervalssync (jorge-huxley/intervalssync, MIT license).
+Authentication uses the OAuth2 password grant (IdentityServer) to obtain a
+Bearer token, then POSTs to `EditCustomWorkOut` with a structure of steps.
 
 Designed for:
   1) Direct CLI use (see igpsport_cli.py)
@@ -19,14 +19,20 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
-from urllib.parse import unquote
 
 import requests
 
 # --- Endpoints (unofficial, reverse-engineered from the intervalssync repo) ---
 
-LOGIN_URL = "https://i.igpsport.com/Auth/Login"
 IGPS_API = "https://prod.en.igpsport.com"
+# OAuth2 password-grant (IdentityServer). Captured from the iGPSPORT app after
+# the 2026 migration off the old i.igpsport.com/Auth/Login cookie flow.
+LOGIN_URL = f"{IGPS_API}/service/auth/connect/token"
+OAUTH_CLIENT_ID = "qiwu.mobile"
+OAUTH_CLIENT_SECRET = "0d9b5544-6871-2999-13a9-59198788054b"
+OAUTH_SCOPE = (
+    "openid offline_access mobile.api user.api device.api activity.api IdentityServerApi"
+)
 IGPS_WORKOUT_LIST_URL = f"{IGPS_API}/service/mobile/api/WorkOut/CustomWorkout"
 IGPS_WORKOUT_EDIT_URL = f"{IGPS_API}/service/mobile/api/WorkOut/EditCustomWorkOut"
 # Captured from the iGPSPORT iPhone app: POST with the id as a query param and an
@@ -49,18 +55,28 @@ class AuthError(IGPSportError):
 def login(session: requests.Session, user: str, password: str) -> dict[str, str]:
     """Authenticate against iGPSPORT and return headers with the Bearer token.
 
-    The token comes from the `loginToken` cookie (URL-encoded) set after login;
-    it must be decoded to be used as a Bearer token against the gateway.
+    Uses the OAuth2 password grant against the IdentityServer token endpoint and
+    returns the `access_token` as a Bearer header for the mobile API gateway.
     """
-    resp = session.post(LOGIN_URL, json={"username": user, "password": password})
+    resp = session.post(
+        LOGIN_URL,
+        data={
+            "client_id": OAUTH_CLIENT_ID,
+            "client_secret": OAUTH_CLIENT_SECRET,
+            "grant_type": "password",
+            "username": user,
+            "password": password,
+            "scope": OAUTH_SCOPE,
+        },
+    )
     if not resp.ok:
-        raise AuthError(f"iGPSPORT login failed: HTTP {resp.status_code}")
+        raise AuthError(f"iGPSPORT login failed: HTTP {resp.status_code} {resp.text[:200]}")
 
-    token = session.cookies.get("loginToken")
+    token = resp.json().get("access_token")
     if not token:
-        raise AuthError("iGPSPORT did not return a loginToken cookie")
+        raise AuthError("iGPSPORT login returned no access_token")
 
-    return {"Authorization": f"Bearer {unquote(token)}"}
+    return {"Authorization": f"Bearer {token}"}
 
 
 # --------------------------------------------------------------------------
